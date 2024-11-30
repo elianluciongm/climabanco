@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Importar Dados Climáticos</title>
+    <link href="styles.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+</head>
+<body>
+
+    <div class="container mt-4">
+        <h1 class="text-center" style="color:rgb(238, 201, 0);">Importar Dados Climáticos</h1>
+
+        <!-- Formulário com input para inserir a cidade -->
+        <form id="form-clima" class="mt-4">
+            <label for="cidade">Cidade:</label>
+            <input type="text" id="cidade" name="cidade" required>
+            <button type="submit" class="btn btn-warning">Importar Dados</button>
+            <button type="button" id="limpar-banco" class="btn btn-warning" onclick="limparBanco()">Limpar Banco</button>
+            <button class="btn btn-warning" type="button" onclick="fetchLogs()">Exibir Logs</button>
+        </form>
+
+        <!-- Exibição dos dados -->
+        <table class="table table-striped mt-4">
+            <thead>
+                <tr class="text-white">
+                    <th>Cidade</th>
+                    <th>Temperatura Máxima</th>
+                    <th>Temperatura Mínima</th>
+                    <th>Umidade</th>
+                    <th>Vento</th>
+                </tr>
+            </thead>
+            <tbody id="dados-clima" class="text-white">
+            </tbody>
+        </table>
+
+        <div id="alert" class="mt-4"></div>
+        <div id="logs-container" class="mt-4"></div>
+    </div>
+
+    <script>
+        // Função para carregar dados climáticos da cidade
+        function carregarDados(cidade) {
+            fetch(`php1/carregar_dados.php?cidade=${encodeURIComponent(cidade)}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.length > 0) {
+                        let tabelaHtml = '';
+                        data.forEach(dado => {
+                            tabelaHtml += 
+                                `<tr>
+                                    <td>${dado.cidade}</td>
+                                    <td>${dado.temperatura_max} °C</td>
+                                    <td>${dado.temperatura_min} °C</td>
+                                    <td>${dado.umidade} %</td>
+                                    <td>${dado.vento} m/s</td>
+                                </tr>`;
+                        });
+                        document.getElementById('dados-clima').innerHTML = tabelaHtml;
+                    } else {
+                        alert('Nenhum dado encontrado para essa cidade no banco de dados.');
+                    }
+                })
+                .catch(error => {
+                    console.error('Erro ao carregar os dados:', error);
+                    alert('Erro ao carregar os dados climáticos.');
+                });
+        }
+
+        // Envio de dados climáticos para o servidor
+        document.getElementById('form-clima').addEventListener('submit', function(event) {
+            event.preventDefault();
+
+            const cidade = document.getElementById('cidade').value;
+            const apiKey = '9ff164aa1f1ef36138bfb6a314db61ed'; // Sua chave API
+            const url = `https://api.openweathermap.org/data/2.5/weather?q=${cidade}&appid=${apiKey}&units=metric&lang=pt_br`;
+
+            fetch(url)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.cod === 200) {
+                        const climaData = {
+                            cidade: data.name,
+                            temperatura_max: data.main.temp_max,
+                            temperatura_min: data.main.temp_min,
+                            umidade: data.main.humidity,
+                            vento: data.wind.speed
+                        };
+
+                        fetch('php1/salvar_clima.php', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify(climaData)
+                        })
+                        .then(response => response.json())
+                        .then(() => {
+                            alert('Dados climáticos importados e salvos com sucesso!');
+                            carregarDados(cidade); 
+                            registrarLog('Importar Dados', 'Sucesso');
+                        })
+                        .catch(error => {
+                            console.error('Erro ao salvar os dados no banco:', error);
+                            alert('Erro ao salvar os dados no banco.');
+                        });
+                    } else {
+                        alert('Erro ao buscar os dados climáticos');
+                    }
+                })
+                .catch(error => {
+                    console.error('Erro ao fazer a requisição à API', error);
+                    alert('Erro ao buscar os dados climáticos');
+                });
+        });
+
+        // Função para limpar o banco de dados
+        function limparBanco() {
+            if (confirm('Tem certeza de que deseja apagar todos os dados do banco?')) {
+                fetch('php1/limpar_banco.php', { method: 'POST' })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            alert(data.message);
+                            document.getElementById('dados-clima').innerHTML = '';
+                            document.getElementById('cidade').value = '';
+                        } else {
+                            alert(data.message);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Erro ao limpar o banco:', error);
+                        alert('Erro ao limpar os dados do banco.');
+                    });
+            }
+        }
+
+        // Função para exibir alertas
+        function mostrarAlerta(msg) {
+            var alert = document.createElement("div");
+            alert.innerHTML = msg;
+            alert.classList.add("alert", "alert-danger", "mt-3");
+            document.querySelector("#alert").innerHTML = '';
+            document.querySelector("#alert").appendChild(alert);
+        }
+
+        // Função para registrar logs
+        async function registrarLog(metodo, retorno) {
+            const cidade = document.getElementById('cidade').value; 
+            const matricula = "435504";
+            const resultado = retorno === 'Sucesso' ? `Dados climáticos cidade ${cidade}` : `Erro ao importar dados para a cidade de ${cidade}`;
+
+            const urlLogs = `https://www.piway.com.br/unoesc/api/inserir/log/${matricula}/OpenWeather/${metodo}/${resultado}`;
+
+            try {
+                const response = await fetch(urlLogs);
+                if (!response.ok) {
+                    throw new Error('Erro ao registrar log.');
+                }
+            } catch (error) {
+                console.error('Erro ao registrar log:', error.message);
+            }
+        }
+
+        // Função para exibir logs diretamente da API
+        async function fetchLogs() {
+            const matricula = "435504"; 
+            const urlLogs = `https://www.piway.com.br/unoesc/api/logs/${matricula}`;
+
+            try {
+                const response = await fetch(urlLogs);
+                if (!response.ok) {
+                    throw new Error('Matrícula do aluno é inválida.');
+                }
+                const logs = await response.json();
+                displayLogs(logs);
+            } catch (error) {
+                mostrarAlerta(error.message);
+            }
+        }
+
+        // Função para exibir os logs na interface
+        function displayLogs(logs) {
+            const logsContainer = document.getElementById('logs-container');
+            logsContainer.innerHTML = ''; 
+
+            logs.forEach(log => {
+                const logElement = document.createElement('div');
+                logElement.className = 'log-entry d-flex justify-content-between align-items-center mb-2';
+                logElement.setAttribute('data-id', log.idlog); 
+                logElement.innerHTML = `<p class="text-white">ID: ${log.idlog}<br> Data: ${log.log}<br> API: ${log.api}<br> Método: ${log.metodo}<br> Resultado: ${log.resultado}</p>
+                                        <button class="btn btn-danger btn-sm" onclick="deleteLog('${log.idlog}')">Excluir</button>`;
+                logsContainer.appendChild(logElement);
+            });
+        }
+
+        async function deleteLog(idLog) {
+            const matricula = "435504"; 
+            const urlDeleteLog = `https://www.piway.com.br/unoesc/api/excluir/log/${idLog}/aluno/${matricula}`;
+
+            try {
+                await fetch(urlDeleteLog);
+                fetchLogs(); 
+            } catch (error) {
+                console.error('Erro ao excluir log:', error.message);
+            }
+        }
+    </script>
+
+</body>
+</html>
